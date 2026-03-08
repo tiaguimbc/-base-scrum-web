@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planejamento DEV - SCM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .tab-content { display: none; opacity: 0; transform: translateY(10px); transition: all 0.3s ease; }
+        .tab-content.active { display: block; opacity: 1; transform: translateY(0); }
+        .nav-button.active { background-color: #2563eb; color: white; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3); }
+        .modal { transition: opacity 0.25s ease; z-index: 100; }
+
+        .gantt-container { position: relative; border: 1px solid #e2e8f0; background: #fff; border-radius: 12px; overflow: hidden; height: 100%; display: flex; flex-direction: column; }
+        .gantt-viewport { overflow: auto; flex: 1; position: relative; }
+        .gantt-grid { display: grid; position: relative; min-width: max-content; }
+        .gantt-header-wrapper { position: sticky; top: 0; z-index: 50; background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
+        .gantt-header-row { display: grid; min-width: max-content; }
+        .gantt-month-cell { padding: 8px 15px; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; border-right: 1px solid #e2e8f0; background: #f1f5f9; }
+        .gantt-day-cell { border-right: 1px solid #e2e8f0; padding: 10px 0; text-align: center; font-size: 10px; font-weight: 600; color: #94a3b8; background: #fff; line-height: 1.2; }
+        .gantt-project-row { display: grid; min-width: max-content; border-bottom: 1px solid #f1f5f9; position: relative; }
+        .gantt-label-col { position: sticky; left: 0; z-index: 40; background: #fff; border-right: 2px solid #e2e8f0; padding: 15px; font-size: 12px; font-weight: 700; color: #1e293b; display: flex; flex-direction: column; justify-content: center; width: 220px; box-shadow: 5px 0 10px -5px rgba(0,0,0,0.05); }
+        .gantt-bars-area { position: absolute; top: 0; left: 220px; right: 0; bottom: 0; pointer-events: none; }
+        .gantt-bar { position: absolute; height: 24px; border-radius: 6px; font-size: 10px; font-weight: 700; display: flex; align-items: center; padding: 0 10px; pointer-events: auto; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(0,0,0,0.1); }
+        .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #3b82f6; z-index: 45; pointer-events: none; }
+        .today-line::after { content: 'HOJE'; position: absolute; top: -20px; left: -15px; font-size: 8px; font-weight: 900; color: #3b82f6; background: #fff; padding: 2px 4px; border: 1px solid #3b82f6; border-radius: 4px; }
+
+        .status-todo { background-color: #f1f5f9; color: #475569; }
+        .status-doing { background-color: #dbeafe; color: #2563eb; }
+        .status-done { background-color: #dcfce7; color: #16a34a; }
+        .badge-p1 { background-color: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+        .badge-p2 { background-color: #ffedd5; color: #ea580c; border: 1px solid #fed7aa; }
+        .badge-p3 { background-color: #dbeafe; color: #2563eb; border: 1px solid #bfdbfe; }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen overflow-hidden relative">
+
+    <div id="login-screen" class="absolute inset-0 bg-slate-100 z-50 flex flex-col items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm w-full border border-slate-200">
+            <div class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl mx-auto mb-4 shadow-lg">
+                <i class="fas fa-bolt"></i>
+            </div>
+            <h2 class="text-2xl font-black text-slate-800 mb-2">Planejamento DEV</h2>
+            <p class="text-sm text-slate-500 mb-8">Acesso restrito à equipe Queonetics</p>
+            
+            <button id="btn-login-google" class="w-full bg-white border border-slate-300 text-slate-700 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 hover:bg-slate-50 transition-all shadow-sm">
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-5 h-5" alt="Google">
+                Entrar com o Google
+            </button>
+            
+            <div id="login-error" class="hidden mt-4 p-3 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-bold text-left">
+                </div>
+        </div>
+    </div>
+
+    <div id="app-container" class="flex h-full opacity-0 pointer-events-none transition-opacity duration-300">
+        <aside class="w-72 bg-white border-r border-slate-200 flex flex-col shrink-0 z-30 shadow-sm">
+            <div class="p-6 border-b border-slate-100">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg"><i class="fas fa-bolt"></i></div>
+                    <div>
+                        <h1 class="font-black text-lg text-blue-900">Planejamento DEV</h1>
+                        <p class="text-[9px] text-blue-500 font-extrabold uppercase">Gerenciamento Ágil</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 bg-slate-50 border-b border-slate-100">
+                <label class="text-[10px] font-bold text-slate-400 uppercase mb-2 block">Projeto Ativo</label>
+                <select id="project-selector" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold outline-none cursor-pointer mb-3"></select>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                    <button onclick="openEditProjectModal()" class="flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-600 py-2 rounded-lg text-[10px] font-bold hover:bg-slate-100 transition-all"><i class="fas fa-edit"></i> Editar</button>
+                    <button onclick="deleteProject()" class="flex items-center justify-center gap-2 bg-red-50 border border-red-100 text-red-600 py-2 rounded-lg text-[10px] font-bold hover:bg-red-100 transition-all"><i class="fas fa-trash-alt"></i> Excluir</button>
+                </div>
+                <button onclick="openModal('modal-new-project')" class="w-full border-2 border-dashed border-slate-300 rounded-lg py-2 text-xs font-bold text-slate-500 hover:text-blue-600 transition-all">+ Novo Projeto</button>
+            </div>
+
+            <nav class="flex-1 p-4 space-y-2">
+                <button onclick="switchView('backlog')" class="nav-button w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 active" data-view="backlog"><i class="fas fa-list-ul w-5"></i> <span class="text-sm font-semibold">Backlog</span></button>
+                <button onclick="switchView('sprint')" class="nav-button w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600" data-view="sprint"><i class="fas fa-columns w-5"></i> <span class="text-sm font-semibold">Kanban</span></button>
+                <button onclick="switchView('gantt')" class="nav-button w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600" data-view="gantt"><i class="fas fa-chart-gantt w-5"></i> <span class="text-sm font-semibold">Gantt</span></button>
+            </nav>
+
+            <div class="p-4 border-t border-slate-200">
+                <button onclick="logout()" class="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-600 py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition-all">
+                    <i class="fas fa-sign-out-alt"></i> Sair
+                </button>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <header class="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shrink-0">
+                <h2 class="text-xl font-extrabold text-slate-800" id="current-project-title">Selecione um projeto</h2>
+                <div class="text-xs font-bold text-slate-500 uppercase"><span id="total-points">0</span> PTS TOTAL</div>
+            </header>
+
+            <section class="flex-1 p-6 overflow-hidden bg-slate-100">
+                <div id="view-backlog" class="tab-content active h-full overflow-y-auto space-y-6 custom-scrollbar">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-2xl font-black text-slate-800">Histórias</h3>
+                        <button onclick="openModal('modal-new-story')" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg hover:bg-blue-700 transition-all">+ Nova História</button>
+                    </div>
+                    <div id="backlog-container" class="space-y-4 pb-10"></div>
+                </div>
+
+                <div id="view-sprint" class="tab-content h-full">
+                    <div class="flex gap-4 h-full overflow-x-auto pb-4 custom-scrollbar">
+                        <div class="min-w-[300px] flex-1 flex flex-col">
+                            <div class="flex justify-between items-center mb-3 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>A Fazer</span> <span id="count-todo" class="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">0</span></div>
+                            <div id="col-todo" data-status="todo" class="kanban-column flex-1 bg-slate-200/40 rounded-2xl p-3 space-y-3 min-h-[200px]"></div>
+                        </div>
+                        <div class="min-w-[300px] flex-1 flex flex-col">
+                            <div class="flex justify-between items-center mb-3 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>Fazendo</span> <span id="count-doing" class="bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">0</span></div>
+                            <div id="col-doing" data-status="doing" class="kanban-column flex-1 bg-blue-50 rounded-2xl p-3 space-y-3 min-h-[200px]"></div>
+                        </div>
+                        <div class="min-w-[300px] flex-1 flex flex-col">
+                            <div class="flex justify-between items-center mb-3 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>Concluído</span> <span id="count-done" class="bg-green-100 text-green-600 px-2 py-0.5 rounded-full">0</span></div>
+                            <div id="col-done" data-status="done" class="kanban-column flex-1 bg-green-50 rounded-2xl p-3 space-y-3 min-h-[200px]"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="view-gantt" class="tab-content h-full flex flex-col">
+                    <div class="mb-4 flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-sm shrink-0">
+                        <div class="flex items-center gap-4">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-black text-slate-400 uppercase">Zoom:</span>
+                                <select id="gantt-zoom" onchange="renderGantt()" class="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-bold cursor-pointer">
+                                    <option value="40">Compacto</option>
+                                    <option value="60" selected>Padrão</option>
+                                    <option value="100">Largo</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-black text-slate-400 uppercase">Dono:</span>
+                                <select id="gantt-owner-filter" onchange="renderGantt()" class="bg-blue-50 border border-blue-100 rounded px-2 py-1 text-xs font-bold text-blue-700 cursor-pointer"><option value="todos">Todos</option></select>
+                            </div>
+                        </div>
+                        <span id="gantt-today-label" class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase">Hoje</span>
+                    </div>
+                    <div class="gantt-container flex-1"><div class="gantt-viewport custom-scrollbar"><div id="gantt-chart" class="gantt-grid"></div></div></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="modal-new-project" class="modal opacity-0 pointer-events-none fixed inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"><div class="bg-white w-full max-w-md p-8 rounded-3xl shadow-2xl"><h4 class="text-2xl font-black mb-6">Novo Projeto</h4><input type="text" id="new-project-name" class="w-full bg-slate-100 p-4 rounded-xl outline-none mb-6" placeholder="Nome do Projeto"><div class="flex justify-end gap-3"><button onclick="closeModal('modal-new-project')" class="font-bold text-slate-500">Cancelar</button> <button id="btn-save-project" class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold">Criar</button></div></div></div>
+    <div id="modal-edit-project" class="modal opacity-0 pointer-events-none fixed inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"><div class="bg-white w-full max-w-md p-8 rounded-3xl shadow-2xl"><h4 class="text-2xl font-black mb-6">Editar Projeto</h4><input type="text" id="edit-project-name-input" class="w-full bg-slate-100 p-4 rounded-xl outline-none mb-6"><div class="flex justify-end gap-3"><button onclick="closeModal('modal-edit-project')" class="font-bold text-slate-500">Cancelar</button> <button id="btn-update-project-btn" class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold">Salvar</button></div></div></div>
+    <div id="modal-new-story" class="modal opacity-0 pointer-events-none fixed inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"><div class="bg-white w-full max-w-lg p-8 rounded-3xl shadow-2xl"><h4 class="text-2xl font-black mb-6">Nova História</h4><div class="space-y-4"><input type="text" id="story-title" class="w-full bg-slate-100 p-3 rounded-xl outline-none" placeholder="Título"><select id="story-priority" class="w-full bg-slate-100 p-3 rounded-xl outline-none"><option value="P1">Alta Prioridade</option><option value="P2" selected>Média Prioridade</option><option value="P3">Baixa Prioridade</option></select><textarea id="story-desc" rows="3" class="w-full bg-slate-100 p-3 rounded-xl outline-none" placeholder="Descrição"></textarea></div><div class="flex justify-end gap-3 mt-8"><button onclick="closeModal('modal-new-story')" class="font-bold text-slate-400">Cancelar</button> <button id="btn-create-story" class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold">Criar</button></div></div></div>
+    <div id="modal-edit-story" class="modal opacity-0 pointer-events-none fixed inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"><div class="bg-white w-full max-w-lg p-8 rounded-3xl shadow-2xl"><h4 class="text-2xl font-black mb-6">Editar História</h4><input type="hidden" id="edit-story-id"><div class="space-y-4"><input type="text" id="edit-story-title" class="w-full bg-slate-100 p-3 rounded-xl outline-none"><select id="edit-story-priority" class="w-full bg-slate-100 p-3 rounded-xl outline-none"><option value="P1">Alta Prioridade</option><option value="P2">Média Prioridade</option><option value="P3">Baixa Prioridade</option></select><textarea id="edit-story-desc" rows="3" class="w-full bg-slate-100 p-3 rounded-xl outline-none"></textarea></div><div class="flex justify-end gap-3 mt-8"><button onclick="closeModal('modal-edit-story')" class="font-bold text-slate-400">Cancelar</button> <button id="btn-update-story" class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold">Salvar</button></div></div></div>
+    <div id="modal-add-task" class="modal opacity-0 pointer-events-none fixed inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"><div class="bg-white w-full max-w-md p-8 rounded-3xl shadow-2xl"><h4 class="text-xl font-black mb-6">Tarefa</h4><input type="hidden" id="target-story-id"><input type="hidden" id="edit-task-index"><div class="space-y-4"><input type="text" id="task-title" class="w-full bg-slate-100 p-3 rounded-xl outline-none" placeholder="Título"><div class="grid grid-cols-2 gap-4"><input type="number" id="task-points" class="w-full bg-slate-100 p-3 rounded-xl outline-none" placeholder="Pts"><input type="text" id="task-owner" class="w-full bg-slate-100 p-3 rounded-xl outline-none" placeholder="Responsável"></div><div class="grid grid-cols-2 gap-4"><input type="date" id="task-start" class="w-full bg-slate-100 p-3 rounded-xl outline-none text-xs"><input type="date" id="task-end" class="w-full bg-slate-100 p-3 rounded-xl outline-none text-xs"></div></div><div class="flex justify-end gap-3 mt-8"><button onclick="closeModal('modal-add-task')" class="font-bold text-slate-400">Cancelar</button> <button id="btn-confirm-task" class="bg-green-600 text-white px-6 py-2 rounded-xl font-bold">Salvar</button></div></div></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, updateDoc, deleteDoc, arrayUnion, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCGQZgIkr2T7DJ880Z0R6Nqi_R4O5zabTw",
+            authDomain: "base-scrum.firebaseapp.com",
+            projectId: "base-scrum",
+            storageBucket: "base-scrum.firebasestorage.app",
+            messagingSenderId: "862384072053",
+            appId: "1:862384072053:web:922d943b7b95b065381f3c"
+        };
+        
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+        
+        // Força o pop-up do Google a usar contas do domínio da empresa
+        provider.setCustomParameters({
+            hd: 'queonetics.com'
+        });
+
+        // REGRAS DE ACESSO
+        const ALLOWED_DOMAIN = "@queonetics.com";
+        const ADMIN_UID = "xgo6hl2Dp3V8uZDlILxhoNpDtbm2";
+
+        let activeProjectId = null;
+        let projectsList = [];
+        let storiesData = [];
+        let allBacklogData = []; 
+        let unsubscribeStories = null;
+        let unsubscribeProjects = null;
+        let unsubscribeAllBacklog = null;
+        let isAppInitialized = false;
+
+        window.openModal = (id) => document.getElementById(id).classList.remove('opacity-0', 'pointer-events-none');
+        window.closeModal = (id) => document.getElementById(id).classList.add('opacity-0', 'pointer-events-none');
+        window.switchView = (v) => {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.nav-button').forEach(b => b.classList.remove('active'));
+            document.getElementById('view-'+v).classList.add('active');
+            document.querySelector(`[data-view="${v}"]`).classList.add('active');
+            if(v === 'gantt') renderGantt();
+        };
+
+        // --- SISTEMA DE LOGIN ---
+        onAuthStateChanged(auth, (user) => {
+            const loginScreen = document.getElementById('login-screen');
+            const appContainer = document.getElementById('app-container');
+            const errorMsg = document.getElementById('login-error');
+
+            if (user) {
+                // Libera o acesso se for do domínio @queonetics OU se for o UID de Admin
+                if ((user.email && user.email.endsWith(ALLOWED_DOMAIN)) || user.uid === ADMIN_UID) {
+                    loginScreen.classList.add('hidden');
+                    appContainer.classList.remove('opacity-0', 'pointer-events-none');
+                    errorMsg.classList.add('hidden');
+                    initializeAppData();
+                } else {
+                    errorMsg.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Acesso negado: <b>${user.email}</b><br><span class="font-normal text-[10px]">Acesso restrito à equipe.</span>`;
+                    errorMsg.classList.remove('hidden');
+                    signOut(auth); 
+                }
+            } else {
+                loginScreen.classList.remove('hidden');
+                appContainer.classList.add('opacity-0', 'pointer-events-none');
+                
+                // Limpa os dados se a pessoa deslogar
+                if(unsubscribeProjects) unsubscribeProjects();
+                if(unsubscribeStories) unsubscribeStories();
+                if(unsubscribeAllBacklog) unsubscribeAllBacklog();
+                isAppInitialized = false;
+            }
+        });
+
+        document.getElementById('btn-login-google').onclick = () => {
+            const errorMsg = document.getElementById('login-error');
+            errorMsg.classList.add('hidden');
+            signInWithPopup(auth, provider).catch(error => {
+                console.error("Erro ao logar com Google:", error);
+                errorMsg.innerText = "Falha ao abrir pop-up do Google. Verifique se os pop-ups estão bloqueados.";
+                errorMsg.classList.remove('hidden');
+            });
+        };
+
+        window.logout = () => signOut(auth);
+
+        // --- INICIALIZAÇÃO DOS DADOS ---
+        function initializeAppData() {
+            if (isAppInitialized) return; 
+            isAppInitialized = true;
+
+            unsubscribeProjects = onSnapshot(query(collection(db, "projects"), orderBy("createdAt", "desc")), (snap) => {
+                projectsList = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                const sel = document.getElementById('project-selector');
+                sel.innerHTML = projectsList.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+                
+                if(projectsList.length > 0) {
+                    if(!activeProjectId || !projectsList.find(p => p.id === activeProjectId)) {
+                        activeProjectId = projectsList[0].id;
+                        sel.value = activeProjectId;
+                        loadStories();
+                    } else { sel.value = activeProjectId; }
+                    const current = projectsList.find(p => p.id === activeProjectId);
+                    document.getElementById('current-project-title').innerText = current ? current.name : "Selecione um projeto";
+                } else {
+                    activeProjectId = null;
+                    document.getElementById('current-project-title').innerText = "Crie um projeto";
+                    renderBacklog();
+                    renderKanban();
+                    renderGantt();
+                }
+
+                sel.onchange = (e) => {
+                    activeProjectId = e.target.value;
+                    const current = projectsList.find(p => p.id === activeProjectId);
+                    document.getElementById('current-project-title').innerText = current ? current.name : "";
+                    loadStories();
+                };
+            });
+
+            unsubscribeAllBacklog = onSnapshot(collection(db, "backlog"), (snap) => {
+                allBacklogData = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                const filter = document.getElementById('gantt-owner-filter');
+                const val = filter.value;
+                const owners = new Set();
+                allBacklogData.forEach(s => (s.tasks || []).forEach(t => { if(t.owner && t.owner !== 'S/D') owners.add(t.owner); }));
+                let html = '<option value="todos">Todos</option>';
+                Array.from(owners).sort().forEach(o => html += `<option value="${o}" ${o===val?'selected':''}>${o}</option>`);
+                filter.innerHTML = html;
+                if(document.getElementById('view-gantt').classList.contains('active')) renderGantt();
+            });
+        }
+
+        // --- FUNÇÕES CRUD E GANTT ---
+        document.getElementById('btn-save-project').onclick = async () => {
+            const name = document.getElementById('new-project-name').value;
+            if(name) { await addDoc(collection(db, "projects"), { name, createdAt: new Date() }); closeModal('modal-new-project'); }
+        };
+
+        window.openEditProjectModal = () => {
+            if(!activeProjectId) return;
+            document.getElementById('edit-project-name-input').value = projectsList.find(p => p.id === activeProjectId).name;
+            openModal('modal-edit-project');
+        };
+
+        document.getElementById('btn-update-project-btn').onclick = async () => {
+            const newName = document.getElementById('edit-project-name-input').value;
+            if(newName && activeProjectId) { await updateDoc(doc(db, "projects", activeProjectId), { name: newName }); closeModal('modal-edit-project'); }
+        };
+
+        window.deleteProject = async () => { if(activeProjectId && confirm("Apagar projeto?")) { await deleteDoc(doc(db, "projects", activeProjectId)); activeProjectId = null; } };
+
+        function loadStories() {
+            if(unsubscribeStories) unsubscribeStories();
+            if(!activeProjectId) {
+                storiesData = [];
+                renderBacklog();
+                renderKanban();
+                document.getElementById('total-points').innerText = '0';
+                return;
+            }
+            unsubscribeStories = onSnapshot(query(collection(db, "backlog"), where("projectId", "==", activeProjectId)), (snap) => {
+                storiesData = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                renderBacklog(); renderKanban();
+                let total = 0;
+                storiesData.forEach(s => (s.tasks || []).forEach(t => total += (parseInt(t.points) || 0)));
+                document.getElementById('total-points').innerText = total;
+            });
+        }
+
+        document.getElementById('btn-create-story').onclick = async () => {
+            const title = document.getElementById('story-title').value;
+            if(title && activeProjectId) {
+                await addDoc(collection(db, "backlog"), { projectId: activeProjectId, title, priority: document.getElementById('story-priority').value, description: document.getElementById('story-desc').value, tasks: [] });
+                closeModal('modal-new-story');
+            }
+        };
+
+        window.openEditStoryModal = (id) => {
+            const s = storiesData.find(st => st.id === id);
+            document.getElementById('edit-story-id').value = id;
+            document.getElementById('edit-story-title').value = s.title;
+            document.getElementById('edit-story-priority').value = s.priority;
+            document.getElementById('edit-story-desc').value = s.description || "";
+            openModal('modal-edit-story');
+        };
+
+        document.getElementById('btn-update-story').onclick = async () => {
+            const id = document.getElementById('edit-story-id').value;
+            await updateDoc(doc(db, "backlog", id), { title: document.getElementById('edit-story-title').value, priority: document.getElementById('edit-story-priority').value, description: document.getElementById('edit-story-desc').value });
+            closeModal('modal-edit-story');
+        };
+
+        window.deleteStory = async (id) => { if(confirm("Apagar história?")) await deleteDoc(doc(db, "backlog", id)); };
+
+        window.openAddTaskModal = (sId, tIdx = -1) => {
+            document.getElementById('target-story-id').value = sId;
+            document.getElementById('edit-task-index').value = tIdx;
+            if(tIdx === -1) {
+                document.getElementById('task-title').value = "";
+                document.getElementById('task-points').value = "3";
+                document.getElementById('task-owner').value = ""; document.getElementById('task-start').value = ""; document.getElementById('task-end').value = "";
+            } else {
+                const t = storiesData.find(st => st.id === sId).tasks[tIdx];
+                document.getElementById('task-title').value = t.title; document.getElementById('task-points').value = t.points;
+                document.getElementById('task-owner').value = t.owner; document.getElementById('task-start').value = t.startDate; document.getElementById('task-end').value = t.endDate;
+            }
+            openModal('modal-add-task');
+        };
+
+        document.getElementById('btn-confirm-task').onclick = async () => {
+            const sId = document.getElementById('target-story-id').value, tIdx = parseInt(document.getElementById('edit-task-index').value);
+            const story = storiesData.find(st => st.id === sId);
+            const taskData = { title: document.getElementById('task-title').value, points: parseInt(document.getElementById('task-points').value) || 0, owner: document.getElementById('task-owner').value || 'S/D', startDate: document.getElementById('task-start').value || 'S/D', endDate: document.getElementById('task-end').value || 'S/D', status: tIdx === -1 ? 'todo' : story.tasks[tIdx].status };
+            if(tIdx === -1) { await updateDoc(doc(db, "backlog", sId), { tasks: arrayUnion(taskData) }); }
+            else { const tasks = [...story.tasks]; tasks[tIdx] = taskData; await updateDoc(doc(db, "backlog", sId), { tasks }); }
+            closeModal('modal-add-task');
+        };
+
+        window.deleteTask = async (sId, idx) => {
+            if(!confirm("Apagar tarefa?")) return;
+            const tasks = storiesData.find(st => st.id === sId).tasks.filter((_, i) => i !== idx);
+            await updateDoc(doc(db, "backlog", sId), { tasks });
+        };
+
+        window.updateTaskStatus = async (sId, idx, status) => {
+            const tasks = [...storiesData.find(st => st.id === sId).tasks];
+            tasks[idx].status = status;
+            await updateDoc(doc(db, "backlog", sId), { tasks });
+        };
+
+        function renderBacklog() {
+            const container = document.getElementById('backlog-container');
+            if(storiesData.length === 0) { container.innerHTML = `<p class="text-center text-slate-400">Vazio.</p>`; return; }
+            container.innerHTML = storiesData.map(s => {
+                const pColor = s.priority === 'P1' ? 'badge-p1' : (s.priority === 'P2' ? 'badge-p2' : 'badge-p3');
+                return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="p-4 bg-slate-50 flex justify-between items-center"><div class="flex items-center gap-3"><span class="text-[9px] font-black px-2 py-0.5 rounded ${pColor}">${s.priority}</span><h4 class="font-bold">${s.title}</h4></div><div class="flex gap-2"><button onclick="openAddTaskModal('${s.id}')" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">Add Tarefa</button><button onclick="openEditStoryModal('${s.id}')" class="text-slate-400 hover:text-blue-600"><i class="fas fa-edit"></i></button><button onclick="deleteStory('${s.id}')" class="text-slate-300 hover:text-red-500"><i class="fas fa-trash"></i></button></div></div>
+                    <div class="p-3 space-y-2">
+                        ${(s.tasks || []).map((t, i) => `<div class="flex items-center justify-between p-2 border rounded-xl text-xs"><div><p class="font-semibold">${t.title}</p><p class="text-[9px] text-slate-400">📅 ${t.startDate} - ${t.endDate}</p></div><div class="flex items-center gap-2"><span class="uppercase text-[9px] font-bold text-slate-400">${t.owner}</span><select onchange="updateTaskStatus('${s.id}', ${i}, this.value)" class="rounded p-1 status-${t.status}"><option value="todo" ${t.status==='todo'?'selected':''}>A Fazer</option><option value="doing" ${t.status==='doing'?'selected':''}>Fazendo</option><option value="done" ${t.status==='done'?'selected':''}>OK</option></select><span class="bg-slate-100 px-1 rounded font-bold">${t.points}</span><button onclick="openAddTaskModal('${s.id}', ${i})" class="text-slate-400 hover:text-blue-600"><i class="fas fa-pencil-alt text-[10px]"></i></button><button onclick="deleteTask('${s.id}', ${i})" class="text-slate-300 hover:text-red-500"><i class="fas fa-times text-[10px]"></i></button></div></div>`).join('')}
+                    </div></div>`;
+            }).join('');
+        }
+
+        function renderKanban() {
+            const cols = { todo: document.getElementById('col-todo'), doing: document.getElementById('col-doing'), done: document.getElementById('col-done') };
+            Object.values(cols).forEach(c => c.innerHTML = '');
+            let counts = { todo: 0, doing: 0, done: 0 };
+            storiesData.forEach(s => (s.tasks || []).forEach((t, i) => {
+                if(cols[t.status]) {
+                    counts[t.status]++;
+                    const card = document.createElement('div');
+                    card.className = "bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs cursor-move mb-2"; card.draggable = true;
+                    card.innerHTML = `<p class="font-bold mb-1">${t.title}</p><div class="flex justify-between text-[9px] text-slate-400"><span>👤 ${t.owner}</span><span>🏁 ${t.endDate}</span></div>`;
+                    card.ondragstart = (e) => { e.dataTransfer.setData("sId", s.id); e.dataTransfer.setData("idx", i); };
+                    cols[t.status].appendChild(card);
+                }
+            }));
+            ['todo','doing','done'].forEach(k => document.getElementById('count-'+k).innerText = counts[k]);
+        }
+
+        window.renderGantt = () => {
+            const container = document.getElementById('gantt-chart'), zoom = parseInt(document.getElementById('gantt-zoom').value), owner = document.getElementById('gantt-owner-filter').value, lblW = 220;
+            if(!container) return;
+            const now = new Date(), min = new Date(now.getFullYear(), now.getMonth(), 1), max = new Date(now.getFullYear(), now.getMonth() + 1, 15), today = new Date();
+            const days = []; for(let d = new Date(min); d <= max; d.setDate(d.getDate() + 1)) days.push(new Date(d));
+            const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+            
+            const todayFormatted = today.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+            document.getElementById('gantt-today-label').innerText = `Hoje: ${todayFormatted}`;
+            
+            let header = `<div class="gantt-header-wrapper"><div class="gantt-header-row" style="grid-template-columns: ${lblW}px repeat(${days.length}, ${zoom}px)"><div class="gantt-month-cell">PROJETO</div><div class="gantt-month-cell" style="grid-column: 2 / -1">${monthNames[min.getMonth()].toUpperCase()} / ${monthNames[(min.getMonth()+1)%12].toUpperCase()} ${now.getFullYear()}</div></div><div class="gantt-header-row" style="grid-template-columns: ${lblW}px repeat(${days.length}, ${zoom}px)"><div class="gantt-day-cell"></div>${days.map(d => `<div class="gantt-day-cell">${['dom','seg','ter','qua','qui','sex','sáb'][d.getDay()]}<br><b>${d.getDate()}</b></div>`).join('')}</div></div>`;
+            let body = projectsList.map(proj => {
+                let tasks = allBacklogData.filter(s => s.projectId === proj.id).flatMap(s => (s.tasks || []).map(t => ({...t})));
+                if(owner !== 'todos') tasks = tasks.filter(t => t.owner === owner);
+                if(tasks.length === 0 && owner !== 'todos') return '';
+                const h = Math.max(80, tasks.length * 32 + 20);
+                return `<div class="gantt-project-row" style="grid-template-columns: ${lblW}px repeat(${days.length}, ${zoom}px); min-height: ${h}px"><div class="gantt-label-col">${proj.name}</div>${days.map(() => `<div class="border-r border-slate-100"></div>`).join('')}<div class="gantt-bars-area">${tasks.map((t, i) => {
+                    const start = new Date(t.startDate + 'T00:00:00'), end = new Date(t.endDate + 'T00:00:00'), startIdx = days.findIndex(d => d.toDateString() === start.toDateString()), dur = Math.ceil((end - start) / 86400000) + 1;
+                    if(startIdx === -1) return '';
+                    let bgColor = '#f1f5f9', txtColor = '#475569';
+                    if(t.status === 'doing') { bgColor = '#dbeafe'; txtColor = '#2563eb'; }
+                    else if(t.status === 'done') { bgColor = '#dcfce7'; txtColor = '#16a34a'; }
+                    return `<div class="gantt-bar shadow-sm" style="left:${startIdx * zoom + 5}px; width:${dur * zoom - 10}px; top:${15 + (i * 32)}px; background:${bgColor}; color:${txtColor}">${zoom > 45 ? t.title : ''}</div>`;
+                }).join('')}</div></div>`;
+            }).join('');
+            
+            const tIdx = days.findIndex(d => d.toDateString() === today.toDateString());
+            container.innerHTML = header + body + (tIdx !== -1 ? `<div class="today-line" style="left: ${lblW + (tIdx * zoom)}px"></div>` : '');
+        };
+
+        document.querySelectorAll('.kanban-column').forEach(col => {
+            col.ondragover = e => e.preventDefault();
+            col.ondrop = async e => {
+                const sId = e.dataTransfer.getData("sId"), idx = parseInt(e.dataTransfer.getData("idx")), status = col.dataset.status;
+                const story = allBacklogData.find(st => st.id === sId);
+                if(story) { const tasks = [...story.tasks]; tasks[idx].status = status; await updateDoc(doc(db, "backlog", sId), { tasks }); }
+            };
+        });
+    </script>
+</body>
+</html>
